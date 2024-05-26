@@ -1,0 +1,13 @@
+requests
+PyPDF2
+uvicorn
+sqlalchemy
+langchain_text_splitters
+langchain_openai
+langchain_pinecone
+langchain_core
+langchain
+fastapi
+pydantic
+typing
+python-dotenv
