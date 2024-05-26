@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from database import SessionLocal, engine
 import models
-from typing import List
 from utils.prepare_vectordb import PrepareVectorDB
 
 models.Base.metadata.create_all(bind=engine)
@@ -50,7 +49,6 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db.refresh(db_user)
     return db_user
 
-
 class DocumentCreate(BaseModel):
     clerkId: str
     link: str
@@ -68,4 +66,36 @@ def create_document(document: DocumentCreate, db: Session = Depends(get_db)):
     db.add(db_document)
     db.commit()
     db.refresh(db_document)
+
+
+    # Prepare vectordb
+    vectordb = PrepareVectorDB(document.link, clerkId=document.clerkId)
+    docs = vectordb.load_documents()
+    chunked_documents = vectordb.chunk_documents(docs)
+    vectorstore = vectordb.prepare_vectordb_to_store(chunked_documents)
+
     return db_document
+
+class QueryCreate(BaseModel):
+    clerkId: str
+    query: str
+
+@app.post("/api/query", response_model=QueryCreate)
+def create_query(query: QueryCreate, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.clerkId == query.clerkId).first()
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    db_query = models.Query(
+        clerkId=query.clerkId,
+        query=query.query,
+        user=db_user
+    )
+    db.add(db_query)
+    db.commit()
+    db.refresh(db_query)
+
+    # Query vectordb
+    vectordb = PrepareVectorDB(link=None, clerkId=query.clerkId)
+    results = vectordb.create_pinecone_instance_and_query(query=query.query)
+
+    return {"clerkId": query.clerkId, "query": query.query, "results": results}

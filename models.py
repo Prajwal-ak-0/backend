@@ -55,7 +55,6 @@ class Query(Base):
     query = Column(String)
     user = relationship("User", back_populates="queries")
 
-
 # Define the ChatHistory model
 class ChatHistory(Base):
     __tablename__ = 'chat_history'
