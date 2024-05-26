@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr
 from database import SessionLocal, engine
 import models
 from typing import List
+from utils.prepare_vectordb import PrepareVectorDB
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -34,26 +35,37 @@ class UserCreate(BaseModel):
     clerkId: str
     username: str
     email: str
-    links: List[str]
 
 @app.post("/api/users/", response_model=UserCreate)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    print(f"Recieved user: {user}")
     db_user = db.query(models.User).filter(models.User.clerkId == user.clerkId).first()
     if db_user is None:
-        # If the user doesn't exist, create a new one
         db_user = models.User(
             clerkId=user.clerkId,
             email=user.email,
             username=user.username,
-            links=user.links
         )
         db.add(db_user)
-        print("User created Successfully")
-    else:
-        # If the user does exist, append the new link to their links field
-        db_user.links.extend(user.links)
-        print("Added Link to user Successfully")
     db.commit()
     db.refresh(db_user)
     return db_user
+
+
+class DocumentCreate(BaseModel):
+    clerkId: str
+    link: str
+
+@app.post("/api/link", response_model=DocumentCreate)
+def create_document(document: DocumentCreate, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.clerkId == document.clerkId).first()
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    db_document = models.Document(
+        clerkId=document.clerkId,
+        link=document.link,
+        user=db_user
+    )
+    db.add(db_document)
+    db.commit()
+    db.refresh(db_document)
+    return db_document

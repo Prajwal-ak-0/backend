@@ -21,7 +21,6 @@ class UserCreate(BaseModel):
     clerkId: str
     email: str
     username: str
-    links: List[str]
 
 # Define the User model
 
@@ -31,7 +30,6 @@ class User(Base):
     clerkId = Column(String, primary_key=True, unique=True, index=True)
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
-    links = Column(ARRAY(String))
     documents = relationship("Document", back_populates="user")
     queries = relationship("Query", back_populates="user")
     chatHistory = relationship("ChatHistory", back_populates="user")
