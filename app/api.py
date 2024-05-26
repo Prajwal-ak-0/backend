@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr
 from database import SessionLocal, engine
 import models
 from utils.prepare_vectordb import PrepareVectorDB
+from typing import Any
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -13,6 +14,7 @@ app = FastAPI()
 origins = [
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://localhost:8000",
 ]
 
 app.add_middleware(
@@ -79,6 +81,7 @@ def create_document(document: DocumentCreate, db: Session = Depends(get_db)):
 class QueryCreate(BaseModel):
     clerkId: str
     query: str
+    results: Any
 
 @app.post("/api/query", response_model=QueryCreate)
 def create_query(query: QueryCreate, db: Session = Depends(get_db)):
@@ -97,5 +100,11 @@ def create_query(query: QueryCreate, db: Session = Depends(get_db)):
     # Query vectordb
     vectordb = PrepareVectorDB(link=None, clerkId=query.clerkId)
     results = vectordb.create_pinecone_instance_and_query(query=query.query)
+    print("Results Printing: ", results)
+    print("Results before return: ", results)  # Add this line
 
-    return {"clerkId": query.clerkId, "query": query.query, "results": results}
+    return {
+            "clerkId": query.clerkId,
+            "query": query.query,
+            "results": results
+    }
