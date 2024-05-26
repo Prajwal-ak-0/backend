@@ -15,6 +15,11 @@ origins = [
     "http://localhost:5173",
     "http://localhost:3000",
     "http://localhost:8000",
+    "https://intern-hazel.vercel.app",
+    "https://intern-hazel.vercel.app/api",
+    "https://intern-hazel.vercel.app/api/users",
+    "https://intern-hazel.vercel.app/api/link",
+    "https://intern-hazel.vercel.app/api/query",
 ]
 
 app.add_middleware(
