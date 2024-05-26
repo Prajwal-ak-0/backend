@@ -20,6 +20,7 @@ origins = [
     "https://intern-hazel.vercel.app/api/users",
     "https://intern-hazel.vercel.app/api/link",
     "https://intern-hazel.vercel.app/api/query",
+    "https://backend-1-e98u.onrender.com",  # Add this line
 ]
 
 app.add_middleware(
