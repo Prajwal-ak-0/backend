@@ -126,8 +126,7 @@ class PrepareVectorDB:
         answer = chain.invoke({"context":res})
 
         template = """
-        You are an assistant for question-answering tasks. Given a user query and some retrieved context, your task is to provide a concise answer. Use the retrieved context to inform your answer. Only if the context is highly irrelevant, you should rely on your own knowledge. 
-
+        You are an assistant for question-answering tasks. Given a user query and some retrieved context, your task is to interpret retrieved content and user query and then provide a answer in 1 to 3 senetences. Do not use your own kowledge. If you do not know just day Sorry I don't know.
         User Query: {user_query}
 
         Retrieved Context: {context}

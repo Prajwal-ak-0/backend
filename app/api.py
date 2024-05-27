@@ -20,7 +20,7 @@ origins = [
     "https://intern-hazel.vercel.app/api/users",
     "https://intern-hazel.vercel.app/api/link",
     "https://intern-hazel.vercel.app/api/query",
-    "https://backend-1-e98u.onrender.com",  # Add this line
+    "https://backend-1-e98u.onrender.com",
 ]
 
 app.add_middleware(
@@ -106,8 +106,6 @@ def create_query(query: QueryCreate, db: Session = Depends(get_db)):
     # Query vectordb
     vectordb = PrepareVectorDB(link=None, clerkId=query.clerkId)
     results = vectordb.create_pinecone_instance_and_query(query=query.query)
-    print("Results Printing: ", results)
-    print("Results before return: ", results)  # Add this line
 
     return {
             "clerkId": query.clerkId,
