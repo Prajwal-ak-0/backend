@@ -22,7 +22,11 @@ from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain.chains import create_structured_output_runnable
 import re
-
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+import torch
+from transformers import AutoProcessor, AutoModelForPreTraining, pipeline
+from langchain_groq import ChatGroq
 
 # Load environment variables
 load_dotenv()
@@ -30,7 +34,10 @@ load_dotenv()
 # Set environment variables
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 os.environ["PINECONE_API_KEY"] = os.getenv("PINECONE_API_KEY")
-
+os.environ["HF_TOKEN"] = os.getenv("HF_TOKEN")
+os.environ["HUGGINGFACEHUB_API_KEY"] = os.getenv("HUGGINGFACEHUB_API_KEY")
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = os.getenv("TF_ENABLE_ONEDNN_OPTS")
+os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
 class SenderType(Enum):
     USER = "USER"
@@ -93,59 +100,52 @@ class PrepareVectorDB:
         """
         Prepare the vector database from the chunked documents and return the vector store.
         """
-        print("Preparing vectordb...")
-        return PineconeVectorStore.from_documents(
-            documents=chunked_documents,
-            index_name="raggpt",
-            embedding=self.embedding,
-            namespace=self.clerkId
+
+        print("Embedding Started")
+        model_name = "maidalun1020/bce-embedding-base_v1"
+        model_kwargs = {'device': 'cuda'}
+        encode_kwargs = {'batch_size': 64, 'normalize_embeddings': True, 'show_progress_bar': False}
+
+        embedding = HuggingFaceInferenceAPIEmbeddings(
+            api_key=os.getenv("HUGGINGFACEHUB_API_KEY"),
+            model_name = model_name,
+            model_kwargs=model_kwargs,
+            encode_kwargs=encode_kwargs
         )
 
-    def format_docs(self, docs):
-        return "\n\n".join(doc.page_content for doc in docs)
+        print("Preparing vectordb Started.")
+        vectorstore = PineconeVectorStore(index_name="raggpt", embedding=embedding, namespace=self.clerkId)
+        vectorstore.add_documents(chunked_documents)
+        Response = vectorstore.similarity_search(query="What are encoders?", k=1)
+        print(Response)
 
     def create_pinecone_instance_and_query(self, query: str):
-
+        print("Creating Pinecone instance and querying...")
         updatedQuery = self.summarize_histrory(self.retrieve_history(self.clerkId), query)
         vectorstore = PineconeVectorStore(index_name="raggpt", embedding=self.embedding, namespace=self.clerkId)
         res = vectorstore.similarity_search(query=updatedQuery, k=2)
 
-        llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+        # Create a ChatGroq model
+        chat = ChatGroq(temperature=0, model_name="mixtral-8x7b-32768")
 
-        qa_system_prompt = """You are an assistant for question-answering tasks. \
-        Use the following pieces of retrieved context to answer the question. \
-        If you don't know the answer, just say that you don't know. \
-        Use three sentences maximum and keep the answer concise.\
+        # Prepare the prompt
+        system = "You are an assistant for question-answering tasks. \
+            Use the following pieces of retrieved context to answer the question. \
+            If you don't know the answer, just say that you don't know. \
+            Use three sentences maximum and keep the answer concise."
+        human = f"{res}\n\n{updatedQuery}"
+        prompt = ChatPromptTemplate.from_messages([("system", system), ("human", human)])
 
-        {context}"""
+        # Generate the response
+        chain = prompt | chat
+        response = chain.invoke({})
 
-        prompt = PromptTemplate.from_template(qa_system_prompt)
-
-        chain = create_stuff_documents_chain(llm, prompt)
-
-        answer = chain.invoke({"context":res})
-
-        template = """
-        You are an assistant for question-answering tasks. Given a user query and some retrieved context, your task is to provide a concise answer. Use the retrieved context to inform your answer. Only if the context is highly irrelevant, you should rely on your own knowledge. 
-
-        User Query: {user_query}
-
-        Retrieved Context: {context}
-
-        Your Answer: """
-        prompt = PromptTemplate.from_template(template)
-
-        llm_output = prompt | llm
-
-        ans = llm_output.invoke({"user_query": updatedQuery, "context": answer})
-
-        match = re.search(r"content='(.*?)'", str(ans))
-
-        # add user quer original query and bot response to db
+        # Update the chat history
         self.update_history_in_db(self.clerkId, query, Sender.BOT)
-        self.update_history_in_db(self.clerkId, match.group(1), Sender.BOT)
+        self.update_history_in_db(self.clerkId, response.content, Sender.BOT)
 
-        return match.group(1)
+        print("Results Printing: ", response.content)
+        return response.content
 
     def summarize_histrory(self, history: List[ChatHistory], query: str):
         """
@@ -153,13 +153,14 @@ class PrepareVectorDB:
         """
         print("Summarizing the chat history...")
 
-        llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+        # Create a ChatGroq model
+        chat = ChatGroq(temperature=0, model_name="mixtral-8x7b-32768")
 
         # Create a chat custom prompt template
         template = """Given a chat history and the latest user question \
-                      which might reference context in the chat history, formulate a standalone question \
-                      which can be understood without the chat history. Do NOT answer the question, \
-                      just reformulate it if needed and otherwise return it as is.\n\nChat History:\n\n{chat_history}\n\nUser Question:\n\n{user_question}"""
+            which might reference context in the chat history, formulate a standalone question \
+            which can be understood without the chat history. Do NOT answer the question, \
+            just reformulate it if needed and otherwise return it as is.\n\nChat History:\n\n{chat_history}\n\nUser Question:\n\n{user_question}"""
 
         # Prepare the chat history
         chat_history = "\n\n".join([f"{message.sender.value}: {message.message}" for message in history])
@@ -167,20 +168,14 @@ class PrepareVectorDB:
         # Prepare the user question
         user_question = query
 
-        prompt = PromptTemplate.from_template(template)
+        prompt = ChatPromptTemplate.from_template(template)
 
-        llm_output = prompt | llm
-
-        res = llm_output.invoke({"chat_history": chat_history, "user_question": user_question})
+        # Generate the response
+        chain = prompt | chat
+        response = chain.invoke({"chat_history": chat_history, "user_question": user_question})
 
         print("Summarized successfully: ")
-        match = re.search(r"content='(.*?)'", str(res))
-        if match:
-            prompt = match.group(1)
-        else:
-            prompt = query  # Use the original query if no match is found
-
-        return prompt
+        return response.content
 
     def retrieve_history(self, user_id: str) -> List[ChatHistory]:
         print("Retrieving history...")
